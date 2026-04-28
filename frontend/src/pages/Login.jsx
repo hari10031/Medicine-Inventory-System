@@ -1,28 +1,33 @@
 import { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { Pill, LogIn } from 'lucide-react';
+import { Pill, LogIn, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { api } from '../lib/api';
 import { useAuthStore } from '../store/auth';
 
 export default function Login() {
-  const { token, setAuth } = useAuthStore();
+  const { session, signIn, signUp } = useAuthStore();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ username: '', password: '' });
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+  const [form, setForm] = useState({ username: '', password: '', name: '' });
   const [loading, setLoading] = useState(false);
 
-  if (token) return <Navigate to="/" replace />;
+  if (session) return <Navigate to="/" replace />;
 
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/login', form);
-      setAuth(data.token, data.user);
-      toast.success(`Welcome, ${data.user.name || data.user.username}`);
+      if (mode === 'signin') {
+        await signIn(form.username, form.password);
+        toast.success('Welcome back');
+      } else {
+        if (form.password.length < 6) throw new Error('Password must be at least 6 characters');
+        await signUp({ username: form.username, password: form.password, name: form.name });
+        toast.success('Account created. The first user becomes admin.');
+      }
       navigate('/');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      toast.error(err.message || 'Failed');
     } finally {
       setLoading(false);
     }
@@ -38,7 +43,38 @@ export default function Login() {
           <h1 className="text-2xl font-bold">MedStock</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Medicine Inventory Management</p>
         </div>
+
+        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 mb-5 text-sm">
+          <button
+            type="button"
+            onClick={() => setMode('signin')}
+            className={`flex-1 py-1.5 rounded-md font-medium transition ${mode === 'signin' ? 'bg-white dark:bg-slate-900 shadow' : 'text-slate-500'
+              }`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('signup')}
+            className={`flex-1 py-1.5 rounded-md font-medium transition ${mode === 'signup' ? 'bg-white dark:bg-slate-900 shadow' : 'text-slate-500'
+              }`}
+          >
+            Sign Up
+          </button>
+        </div>
+
         <form onSubmit={submit} className="space-y-4">
+          {mode === 'signup' && (
+            <div>
+              <label className="label">Full Name</label>
+              <input
+                className="input"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Your name"
+              />
+            </div>
+          )}
           <div>
             <label className="label">Username</label>
             <input
@@ -47,6 +83,7 @@ export default function Login() {
               onChange={(e) => setForm({ ...form, username: e.target.value })}
               required
               autoFocus
+              placeholder="e.g. admin"
             />
           </div>
           <div>
@@ -57,15 +94,17 @@ export default function Login() {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               required
+              minLength={6}
+              placeholder={mode === 'signup' ? 'At least 6 characters' : ''}
             />
           </div>
           <button type="submit" disabled={loading} className="btn-primary w-full">
-            <LogIn size={16} /> {loading ? 'Signing in...' : 'Sign in'}
+            {mode === 'signin' ? <LogIn size={16} /> : <UserPlus size={16} />}
+            {loading ? 'Working...' : mode === 'signin' ? 'Sign in' : 'Create account'}
           </button>
         </form>
         <div className="mt-6 text-xs text-slate-500 dark:text-slate-400 text-center space-y-1">
-          <p>Demo accounts (after seeding):</p>
-          <p><code>admin / admin123</code> &middot; <code>employee / employee123</code></p>
+          <p>The first user to sign up automatically becomes admin.</p>
         </div>
       </div>
     </div>

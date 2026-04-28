@@ -4,6 +4,10 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import App from './App.jsx';
 import './index.css';
+import { useAuthStore } from './store/auth';
+
+// Bootstrap Supabase auth session before first render
+useAuthStore.getState().init();
 
 // Apply persisted theme before render
 const theme = localStorage.getItem('theme');

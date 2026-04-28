@@ -1,7 +1,72 @@
 import { useRef, useState } from 'react';
-import { api } from '../lib/api';
+import * as XLSX from 'xlsx';
+import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from 'lucide-react';
+
+const pickField = (row, ...keys) => {
+  for (const k of keys) {
+    const found = Object.keys(row).find(
+      (rk) => rk.toLowerCase().replace(/[\s_-]/g, '') === k.toLowerCase().replace(/[\s_-]/g, '')
+    );
+    if (found && row[found] !== '' && row[found] != null) return row[found];
+  }
+  return undefined;
+};
+
+const toDate = (v) => {
+  if (v == null || v === '') return null;
+  // Excel serial number?
+  if (typeof v === 'number') {
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    return new Date(epoch.getTime() + v * 86400000);
+  }
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const normalizeRow = (row, idx) => {
+  const name = pickField(row, 'name', 'medicine', 'medicinename');
+  const batchNo = pickField(row, 'batchNo', 'batch', 'batchnumber');
+  const mfgRaw = pickField(row, 'manufacturingDate', 'mfg', 'mfgdate', 'manufactureddate');
+  const expRaw = pickField(row, 'expiryDate', 'expiry', 'exp', 'expdate');
+  const qtyRaw = pickField(row, 'quantity', 'qty', 'totalquantity');
+
+  const mfg = toDate(mfgRaw);
+  const exp = toDate(expRaw);
+  const qty = qtyRaw !== undefined ? Number(qtyRaw) : NaN;
+
+  const errors = [];
+  if (!name) errors.push('name missing');
+  if (!batchNo) errors.push('batchNo missing');
+  if (mfgRaw && !mfg) errors.push('mfg invalid');
+  if (!mfg) errors.push('manufacturingDate missing');
+  if (expRaw && !exp) errors.push('expiry invalid');
+  if (!exp) errors.push('expiryDate missing');
+  if (mfg && exp && exp <= mfg) errors.push('expiry must be after mfg');
+  if (Number.isNaN(qty)) errors.push('quantity invalid');
+  if (qty < 0) errors.push('quantity negative');
+
+  return {
+    row: idx + 2,
+    valid: errors.length === 0,
+    errors,
+    data: {
+      name: name ? String(name).trim() : '',
+      batchNo: batchNo ? String(batchNo).trim() : '',
+      manufacturingDate: mfg,
+      expiryDate: exp,
+      quantity: qty,
+    },
+  };
+};
+
+const parseFile = async (file) => {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array', cellDates: false });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { defval: '' });
+};
 
 export default function BulkUpload() {
   const fileRef = useRef(null);
@@ -18,34 +83,49 @@ export default function BulkUpload() {
   const doPreview = async () => {
     if (!file) return toast.error('Choose a file first');
     setPreviewing(true);
-    const fd = new FormData();
-    fd.append('file', file);
     try {
-      const { data } = await api.post('/medicines/bulk/preview', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const rows = await parseFile(file);
+      const parsed = rows.map(normalizeRow);
+      setPreview({
+        total: parsed.length,
+        validCount: parsed.filter((r) => r.valid).length,
+        rows: parsed,
       });
-      setPreview(data);
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Preview failed');
+      toast.error(e.message || 'Preview failed');
     } finally {
       setPreviewing(false);
     }
   };
 
   const doSave = async () => {
-    if (!file) return;
+    if (!preview) return;
+    const validRows = preview.rows
+      .filter((r) => r.valid)
+      .map((r) => ({
+        name: r.data.name,
+        batch_no: r.data.batchNo,
+        manufacturing_date: r.data.manufacturingDate.toISOString().slice(0, 10),
+        expiry_date: r.data.expiryDate.toISOString().slice(0, 10),
+        quantity: r.data.quantity,
+        remaining_quantity: r.data.quantity,
+      }));
+    if (validRows.length === 0) return toast.error('No valid rows to save');
     setSaving(true);
-    const fd = new FormData();
-    fd.append('file', file);
     try {
-      const { data } = await api.post('/medicines/bulk/save', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      toast.success(`Inserted ${data.inserted}, skipped ${data.skipped}, invalid ${data.invalid}`);
-      setFile(null); setPreview(null);
+      const { data, error } = await supabase
+        .from('medicines')
+        .upsert(validRows, { onConflict: 'name,batch_no', ignoreDuplicates: true })
+        .select();
+      if (error) throw error;
+      const inserted = data?.length ?? 0;
+      const skipped = validRows.length - inserted;
+      toast.success(`Inserted ${inserted}, skipped ${skipped} duplicates`);
+      setFile(null);
+      setPreview(null);
       if (fileRef.current) fileRef.current.value = '';
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Save failed');
+      toast.error(e.message || 'Save failed');
     } finally {
       setSaving(false);
     }

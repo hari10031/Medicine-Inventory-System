@@ -11,8 +11,15 @@ import Transactions from './pages/Transactions';
 import Users from './pages/Users';
 
 function Protected({ children, roles }) {
-  const { token, user } = useAuthStore();
-  if (!token) return <Navigate to="/login" replace />;
+  const { loading, session, user } = useAuthStore();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="text-sm text-slate-500">Loading...</div>
+      </div>
+    );
+  }
+  if (!session) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user?.role)) return <Navigate to="/" replace />;
   return children;
 }

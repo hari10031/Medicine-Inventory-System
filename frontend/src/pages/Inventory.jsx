@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { supabase, fromMedicineRow } from '../lib/supabase';
 import { useAuthStore } from '../store/auth';
 import { Search, Trash2, Edit, X, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -19,11 +19,25 @@ export default function Inventory() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/medicines', { params: { q, sortBy, order, limit: 200 } });
-      setItems(data.items);
-      setTotal(data.total);
+      const sortMap = {
+        createdAt: 'created_at',
+        name: 'name',
+        expiryDate: 'expiry_date',
+        remainingQuantity: 'remaining_quantity',
+        quantity: 'quantity',
+      };
+      let query = supabase
+        .from('medicines')
+        .select('*', { count: 'exact' })
+        .order(sortMap[sortBy] || 'created_at', { ascending: order === 'asc' })
+        .limit(200);
+      if (q.trim()) query = query.or(`name.ilike.%${q}%,batch_no.ilike.%${q}%`);
+      const { data, error, count } = await query;
+      if (error) throw error;
+      setItems((data || []).map(fromMedicineRow));
+      setTotal(count || 0);
     } catch (e) {
-      toast.error('Failed to load');
+      toast.error(e.message || 'Failed to load');
     } finally {
       setLoading(false);
     }
@@ -38,11 +52,12 @@ export default function Inventory() {
   const remove = async (id) => {
     if (!confirm('Delete this medicine?')) return;
     try {
-      await api.delete(`/medicines/${id}`);
+      const { error } = await supabase.from('medicines').delete().eq('id', id);
+      if (error) throw error;
       toast.success('Deleted');
       load();
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Failed');
+      toast.error(e.message || 'Failed');
     }
   };
 
@@ -153,11 +168,24 @@ function EditModal({ med, onClose, onSaved }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put(`/medicines/${med._id}`, form);
+      const dispensed = (med.quantity || 0) - (med.remainingQuantity || 0);
+      const newRemaining = Math.max(0, Number(form.quantity) - dispensed);
+      const { error } = await supabase
+        .from('medicines')
+        .update({
+          name: form.name.trim(),
+          batch_no: form.batchNo.trim(),
+          manufacturing_date: form.manufacturingDate,
+          expiry_date: form.expiryDate,
+          quantity: Number(form.quantity),
+          remaining_quantity: newRemaining,
+        })
+        .eq('id', med._id);
+      if (error) throw error;
       toast.success('Updated');
       onSaved();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed');
+      toast.error(err.message || 'Failed');
     } finally {
       setSaving(false);
     }

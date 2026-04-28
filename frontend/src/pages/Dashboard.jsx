@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { supabase, fromMedicineRow } from '../lib/supabase';
 import { useAuthStore } from '../store/auth';
 import { Package, AlertTriangle, Clock, XCircle, Boxes, Receipt } from 'lucide-react';
 import {
@@ -44,20 +44,61 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const a = await api.get('/analytics/alerts');
-        setAlerts(a.data);
-        if (isAdmin) {
-          const [s, t, top, sd] = await Promise.all([
-            api.get('/analytics/summary'),
-            api.get('/analytics/sales-trend?period=daily&days=14'),
-            api.get('/analytics/top-medicines?limit=5'),
-            api.get('/analytics/stock-distribution'),
-          ]);
-          setSummary(s.data);
-          setTrend(t.data.series);
-          setTopMeds(top.data.items);
-          setStockDist(sd.data.items);
-        }
+        const today = new Date();
+        const in30 = new Date(Date.now() + 30 * 86400000);
+
+        // Alerts (visible to all authenticated users)
+        const [lowRes, expSoonRes, expiredRes] = await Promise.all([
+          supabase.from('medicines').select('*').lte('remaining_quantity', 10).order('remaining_quantity'),
+          supabase.from('medicines').select('*').gte('expiry_date', today.toISOString().slice(0, 10)).lte('expiry_date', in30.toISOString().slice(0, 10)).order('expiry_date'),
+          supabase.from('medicines').select('*').lt('expiry_date', today.toISOString().slice(0, 10)).order('expiry_date'),
+        ]);
+        setAlerts({
+          lowStock: (lowRes.data || []).map(fromMedicineRow),
+          expiringSoon: (expSoonRes.data || []).map(fromMedicineRow),
+          expired: (expiredRes.data || []).map(fromMedicineRow),
+        });
+
+        if (!isAdmin) return;
+
+        // Summary KPIs
+        const [allMeds, txCount] = await Promise.all([
+          supabase.from('medicines').select('quantity, remaining_quantity, expiry_date'),
+          supabase.from('transactions').select('id', { count: 'exact', head: true }),
+        ]);
+        const meds = allMeds.data || [];
+        const todayStr = today.toISOString().slice(0, 10);
+        const in30Str = in30.toISOString().slice(0, 10);
+        setSummary({
+          totalMedicines: meds.length,
+          totalUnitsInStock: meds.reduce((s, m) => s + (m.remaining_quantity || 0), 0),
+          lowStock: meds.filter((m) => m.remaining_quantity <= 10).length,
+          expiringSoon: meds.filter((m) => m.expiry_date >= todayStr && m.expiry_date <= in30Str).length,
+          expired: meds.filter((m) => m.expiry_date < todayStr).length,
+          totalTransactions: txCount.count || 0,
+        });
+
+        // Trend
+        const { data: trendData } = await supabase.rpc('sales_trend', { p_days: 14 });
+        setTrend(
+          (trendData || []).map((d) => ({
+            label: String(d.label).slice(5), // MM-DD
+            units: Number(d.units),
+            count: Number(d.tx_count),
+          }))
+        );
+
+        // Top medicines
+        const { data: topData } = await supabase.rpc('top_medicines', { p_limit: 5 });
+        setTopMeds((topData || []).map((d) => ({ name: d.name, units: Number(d.units) })));
+
+        // Stock distribution: top 8 by remaining
+        const { data: distData } = await supabase
+          .from('medicines')
+          .select('name, remaining_quantity')
+          .order('remaining_quantity', { ascending: false })
+          .limit(8);
+        setStockDist((distData || []).map((m) => ({ name: m.name, units: m.remaining_quantity })));
       } catch (e) {
         console.error(e);
       }

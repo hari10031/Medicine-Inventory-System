@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { supabase, fromMedicineRow } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { Search, ShoppingCart } from 'lucide-react';
 import { fmtDate, expiryStatus, stockStatus } from '../lib/format';
@@ -14,14 +14,21 @@ export default function Dispense() {
   const [reason, setReason] = useState('');
   const [dispensing, setDispensing] = useState(false);
 
+  const fetchMedicines = async () => {
+    let query = supabase
+      .from('medicines')
+      .select('*')
+      .order('name', { ascending: true })
+      .limit(20);
+    if (q.trim()) query = query.or(`name.ilike.%${q}%,batch_no.ilike.%${q}%`);
+    const { data, error } = await query;
+    if (!error) setItems((data || []).map(fromMedicineRow));
+  };
+
   useEffect(() => {
-    const t = setTimeout(async () => {
-      try {
-        const { data } = await api.get('/medicines', { params: { q, limit: 20 } });
-        setItems(data.items);
-      } catch { }
-    }, 300);
+    const t = setTimeout(fetchMedicines, 300);
     return () => clearTimeout(t);
+    // eslint-disable-next-line
   }, [q]);
 
   const resetForm = () => {
@@ -38,20 +45,21 @@ export default function Dispense() {
     if (!customerName.trim()) return toast.error('Recipient name is required');
     setDispensing(true);
     try {
-      const { data } = await api.post('/transactions/dispense', {
-        medicineId: selected._id,
-        quantitySold: qty,
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        reason: reason.trim(),
+      const { data, error } = await supabase.rpc('dispense_medicine', {
+        p_medicine_id: selected._id,
+        p_qty: qty,
+        p_customer_name: customerName.trim(),
+        p_customer_phone: customerPhone.trim() || null,
+        p_reason: reason.trim() || null,
       });
-      toast.success(`Dispensed ${qty} of ${data.medicine.name} to ${data.transaction.customerName}`);
-      setSelected(data.medicine);
+      if (error) throw error;
+      const updatedMed = fromMedicineRow(data.medicine);
+      toast.success(`Dispensed ${qty} of ${updatedMed.name} to ${data.transaction.customer_name}`);
+      setSelected(updatedMed);
       resetForm();
-      const refresh = await api.get('/medicines', { params: { q, limit: 20 } });
-      setItems(refresh.data.items);
+      fetchMedicines();
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Failed');
+      toast.error(e.message || 'Failed');
     } finally {
       setDispensing(false);
     }

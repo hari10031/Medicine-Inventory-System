@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { PlusSquare } from 'lucide-react';
 
@@ -27,14 +27,20 @@ export default function AddMedicine() {
     if (err) return toast.error(err);
     setSaving(true);
     try {
-      await api.post('/medicines', {
-        ...form,
-        quantity: Number(form.quantity),
+      const qty = Number(form.quantity);
+      const { error } = await supabase.from('medicines').insert({
+        name: form.name.trim(),
+        batch_no: form.batchNo.trim(),
+        manufacturing_date: form.manufacturingDate,
+        expiry_date: form.expiryDate,
+        quantity: qty,
+        remaining_quantity: qty,
       });
+      if (error) throw error;
       toast.success('Medicine added');
       navigate('/inventory');
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Failed to add');
+      toast.error(e.message || 'Failed to add');
     } finally {
       setSaving(false);
     }

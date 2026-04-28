@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
-import { fmtDate } from '../lib/format';
+import { supabase, fromTransactionRow } from '../lib/supabase';
 
 export default function Transactions() {
   const [items, setItems] = useState([]);
@@ -8,11 +7,15 @@ export default function Transactions() {
   const [to, setTo] = useState('');
 
   const load = async () => {
-    const params = {};
-    if (from) params.from = from;
-    if (to) params.to = to;
-    const { data } = await api.get('/transactions', { params: { ...params, limit: 200 } });
-    setItems(data.items);
+    let query = supabase
+      .from('transactions')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(200);
+    if (from) query = query.gte('date', from);
+    if (to) query = query.lte('date', `${to}T23:59:59`);
+    const { data, error } = await query;
+    if (!error) setItems((data || []).map(fromTransactionRow));
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [from, to]);
