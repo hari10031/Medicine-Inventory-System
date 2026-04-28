@@ -170,6 +170,8 @@ export default function Dashboard() {
                         color: '#fff',
                         fontSize: 12,
                       }}
+                      labelStyle={{ color: '#fff' }}
+                      itemStyle={{ color: '#fff' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -277,6 +279,8 @@ export default function Dashboard() {
                         color: '#fff',
                         fontSize: 12,
                       }}
+                      labelStyle={{ color: '#fff' }}
+                      itemStyle={{ color: '#fff' }}
                     />
                     <Bar dataKey="units" fill="#10b981" radius={[0, 6, 6, 0]} />
                   </BarChart>
