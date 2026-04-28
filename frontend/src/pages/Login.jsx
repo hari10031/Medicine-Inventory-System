@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { Pill, LogIn, UserPlus } from 'lucide-react';
+import { Pill, LogIn } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/auth';
 
 export default function Login() {
-  const { session, signIn, signUp } = useAuthStore();
+  const { session, signIn } = useAuthStore();
   const navigate = useNavigate();
-  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
-  const [form, setForm] = useState({ username: '', password: '', name: '' });
+  const [form, setForm] = useState({ username: '', password: '' });
   const [loading, setLoading] = useState(false);
 
   if (session) return <Navigate to="/" replace />;
@@ -17,17 +16,11 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      if (mode === 'signin') {
-        await signIn(form.username, form.password);
-        toast.success('Welcome back');
-      } else {
-        if (form.password.length < 6) throw new Error('Password must be at least 6 characters');
-        await signUp({ username: form.username, password: form.password, name: form.name });
-        toast.success('Account created. The first user becomes admin.');
-      }
+      await signIn(form.username, form.password);
+      toast.success('Welcome back');
       navigate('/');
     } catch (err) {
-      toast.error(err.message || 'Failed');
+      toast.error(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -44,37 +37,7 @@ export default function Login() {
           <p className="text-sm text-slate-500 dark:text-slate-400">Medicine Inventory Management</p>
         </div>
 
-        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 mb-5 text-sm">
-          <button
-            type="button"
-            onClick={() => setMode('signin')}
-            className={`flex-1 py-1.5 rounded-md font-medium transition ${mode === 'signin' ? 'bg-white dark:bg-slate-900 shadow' : 'text-slate-500'
-              }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('signup')}
-            className={`flex-1 py-1.5 rounded-md font-medium transition ${mode === 'signup' ? 'bg-white dark:bg-slate-900 shadow' : 'text-slate-500'
-              }`}
-          >
-            Sign Up
-          </button>
-        </div>
-
         <form onSubmit={submit} className="space-y-4">
-          {mode === 'signup' && (
-            <div>
-              <label className="label">Full Name</label>
-              <input
-                className="input"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Your name"
-              />
-            </div>
-          )}
           <div>
             <label className="label">Username</label>
             <input
@@ -94,17 +57,26 @@ export default function Login() {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               required
-              minLength={6}
-              placeholder={mode === 'signup' ? 'At least 6 characters' : ''}
             />
           </div>
           <button type="submit" disabled={loading} className="btn-primary w-full">
-            {mode === 'signin' ? <LogIn size={16} /> : <UserPlus size={16} />}
-            {loading ? 'Working...' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            <LogIn size={16} /> {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
-        <div className="mt-6 text-xs text-slate-500 dark:text-slate-400 text-center space-y-1">
-          <p>The first user to sign up automatically becomes admin.</p>
+        <div className="mt-6 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 text-xs text-slate-600 dark:text-slate-400">
+          <p className="font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Demo credentials</p>
+          <div className="grid grid-cols-2 gap-2 font-mono">
+            <div>
+              <span className="text-slate-500">admin</span>
+              <span className="mx-1">/</span>
+              <span>admin123</span>
+            </div>
+            <div>
+              <span className="text-slate-500">employee</span>
+              <span className="mx-1">/</span>
+              <span>employee123</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

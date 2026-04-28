@@ -17,7 +17,7 @@ if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dar
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <App />
       <Toaster position="top-right" toastOptions={{ className: 'dark:bg-slate-800 dark:text-white' }} />
     </BrowserRouter>
